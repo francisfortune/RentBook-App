@@ -791,6 +791,30 @@
   margin-top: 10px;
   font-weight: 600;
 }
+#calcQty,
+ #calcItem,
+ #checkBtn {
+  width: 100%;
+ }
+ #calcQty{
+  margin: 25px;
+  width: 100%;
+            padding: 14px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            font-family: inherit;
+            background: white;
+ }
+
+
+ #calcQty,
+ #calcItem{
+  outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
 
 @media (max-width: 600px) {
   section {
@@ -838,12 +862,12 @@
      <div class="toggle"><ion-icon name="menu-outline"></ion-icon>
      </div>
      <div class="page-title">
-      <h2 class="page-name" id="brand-name-mobile"></h2>
+      <h2 class="page-name" id="brand-name"></h2>
      </div>
 <div class="mobile-brand">
     
   <h1 style="color: black;">Rent<span style="color: purple;"> Book</span></h1>
-  <span id="brand-name-mobile">Loading...</span>
+
 </div>
 
 <div class="user">
@@ -910,8 +934,9 @@
   <h3>Availability Checker</h3>
 
   <select id="calcItem"></select>
-  <input id="calcQty" type="number" placeholder="Quantity needed" />
+  <input id="calcQty" type="number" placeholder="Quantity needed"  />
   <button id="checkBtn">Check</button>
+  
 
   <p id="calcResult" class="calc-result"></p>
 </div>
@@ -1034,6 +1059,7 @@
             });
         }
     </script>
+    <script type="module" src="assets/js/avatar.js"></script>
     <script type="module" src="assets/js/firebase.js"></script>
     <script type="module" src="assets/js/inventory.js"></script>
 <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9b34487a56f0b78a',t:'MTc2NjYyMzE4NS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>

@@ -4,13 +4,42 @@ import {
   query,
   where,
   getDocs,
-  doc,
   getDoc,
+  doc,
   onSnapshot,
-  updateDoc
+  updateDoc,
+  orderBy,
+  limit
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { onAuthStateChanged } from
-  "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+import {
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+/* =========================
+   HELPERS
+========================= */
+function safeSetText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+function setUserAvatar(businessName) {
+  const avatar = document.getElementById("user-avatar");
+  if (!avatar || !businessName) return;
+  avatar.textContent = businessName.charAt(0).toUpperCase();
+}
+
+function isWithinThisWeek(dateValue) {
+  if (!dateValue) return false;
+  const d = new Date(dateValue);
+  const now = new Date();
+  const start = new Date(now);
+  start.setDate(now.getDate() - now.getDay());
+  const end = new Date(start);
+  end.setDate(start.getDate() + 7);
+  return d >= start && d <= end;
+}
 
 /* =========================
    BUSINESS LOOKUP
@@ -24,181 +53,175 @@ async function getBusinessIdByEmail(email) {
   if (snap.empty) throw new Error("No business");
   return snap.docs[0].data().businessId;
 }
-function setUserAvatar(businessName) {
-  const avatar = document.getElementById("user-avatar");
-  if (!avatar || !businessName) return;
-
-  avatar.textContent = businessName.charAt(0).toUpperCase();
-}
-
 
 /* =========================
    LOAD DASHBOARD UI
 ========================= */
 async function loadDashboardUI(businessId) {
-  const businessSnap = await getDoc(
-    doc(db, "businesses", businessId)
-  );
+  const snap = await getDoc(doc(db, "businesses", businessId));
+  if (!snap.exists()) throw new Error("Business not found");
 
-  if (!businessSnap.exists()) {
-    throw new Error("Business not found");
-  }
+  const business = snap.data();
 
-  const business = businessSnap.data();
-
-  document.getElementById("welcome-text").textContent =
-    `Welcome ${business.name}`;
-
-  document.getElementById("brand-name").textContent = business.name;
-
-  document.getElementById("user-avatar").textContent =
-    business.name.charAt(0).toUpperCase();
+  safeSetText("welcome-text", `${business.name}`);
+  safeSetText("brand-name", business.name);
+  safeSetText("brand-name-mobile", business.name);
+  setUserAvatar(business.name);
 }
 
 /* =========================
-   INVENTORY COUNT (SAFE)
+   INVENTORY COUNT (REALTIME)
 ========================= */
 function listenToInventoryCount(businessId) {
-  const inventoryRef =
-    collection(db, "businesses", businessId, "inventory");
-
-  onSnapshot(inventoryRef, (snap) => {
-    document.getElementById("total-inventory").textContent =
-      snap.size;
+  const ref = collection(db, "businesses", businessId, "inventory");
+  onSnapshot(ref, snap => {
+    safeSetText("total-inventory", snap.size);
   });
 }
 
 /* =========================
-   BOOKING STATS (REALTIME)
+   BOOKING STATS + AUTO-REPAIR
 ========================= */
 function listenToBookingStats(businessId) {
-  const bookingsRef =
-    collection(db, "businesses", businessId, "bookings");
+  const ref = collection(db, "businesses", businessId, "bookings");
 
-  onSnapshot(bookingsRef, async (snap) => {
+  onSnapshot(ref, async snap => {
     let active = 0;
     let returned = 0;
     let overdue = 0;
-
-    const today = new Date();
+    const now = new Date();
 
     for (const d of snap.docs) {
-      const data = d.data();
+      const b = d.data();
 
-      // Auto mark overdue
+      /* 🔧 AUTO-REPAIR */
+      if (!b.status) {
+        await updateDoc(d.ref, { status: "active" });
+        active++;
+        continue;
+      }
+
+      if (!b.createdAt) {
+        await updateDoc(d.ref, { createdAt: new Date() });
+      }
+
+      /* ⏰ OVERDUE CHECK */
       if (
-        data.status === "active" &&
-        data.event?.returnDate
+        b.status === "active" &&
+        b.event?.returnDate
       ) {
-        const returnDate = new Date(data.event.returnDate);
-        if (today > returnDate) {
+        const r = new Date(b.event.returnDate);
+        if (now > r) {
           await updateDoc(d.ref, { status: "overdue" });
           overdue++;
           continue;
         }
       }
 
-      if (data.status === "active") active++;
-      else if (data.status === "returned") returned++;
-      else if (data.status === "overdue") overdue++;
+      if (b.status === "active") active++;
+      else if (b.status === "returned") returned++;
+      else if (b.status === "overdue") overdue++;
     }
 
-    document.getElementById("active-bookings").textContent = active;
-    document.getElementById("returned-bookings").textContent = returned;
-    document.getElementById("overdue-bookings").textContent = overdue;
+    safeSetText("active-bookings", active);
+    safeSetText("returned-bookings", returned);
+    safeSetText("overdue-bookings", overdue);
   });
 }
 
- /* RECENT BOOKINGS (THIS WEEK) */
- const bookingsBody =
- document.getElementById("recent-bookings");
+/* =========================
+   RECENT BOOKINGS (THIS WEEK)
+========================= */
+async function loadRecentBookings(businessId) {
+  const tbody = document.getElementById("recent-bookings");
+  if (!tbody) return;
 
-const bookingsQ = query(
- collection(db, "businesses", businessId, "bookings"),
- orderBy("event.date", "asc"),
- limit(10)
-);
+  const q = query(
+    collection(db, "businesses", businessId, "bookings"),
+    orderBy("createdAt", "desc"),
+    limit(10)
+  );
 
-const bookingsSnap = await getDocs(bookingsQ);
-bookingsBody.innerHTML = "";
+  const snap = await getDocs(q);
+  tbody.innerHTML = "";
 
-let hasEvent = false;
+  let hasEvent = false;
 
-bookingsSnap.forEach(doc => {
- const b = doc.data();
+  snap.forEach(docSnap => {
+    const b = docSnap.data();
+    if (!isWithinThisWeek(b.event?.date)) return;
 
- if (!isWithinThisWeek(b.event.date)) return;
+    hasEvent = true;
 
- hasEvent = true;
+    tbody.innerHTML += `
+      <tr>
+        <td>${b.items?.[0]?.name || "-"}</td>
+        <td>${b.client?.name || "-"}</td>
+        <td>${b.items?.reduce((t,i)=>t+i.qty,0) || 0}</td>
+        <td>
+          <span class="status inProgress">active</span>
+        </td>
+      </tr>
+    `;
+  });
 
- bookingsBody.innerHTML += `
-   <tr>
-     <td>${b.items[0]?.name || "-"}</td>
-     <td>${b.client.name}</td>
-     <td>${b.items.reduce((t,i)=>t+i.qty,0)}</td>
-     <td>
-       <span class="status inProgress">
-         active
-       </span>
-     </td>
-   </tr>
- `;
-});
-
-if (!hasEvent) {
- bookingsBody.innerHTML = `
-   <tr>
-     <td colspan="4"
-       style="text-align:center; opacity:.6;">
-       No events for this week
-     </td>
-   </tr>
- `;
+  if (!hasEvent) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="4" style="text-align:center; opacity:.6;">
+          No events for this week
+        </td>
+      </tr>
+    `;
+  }
 }
 
-/* RECENT CUSTOMERS (INVENTORY ITEMS) */
-const customersBody =
- document.getElementById("recent-customers");
+/* =========================
+   RECENT INVENTORY (RIGHT CARD)
+========================= */
+async function loadRecentInventory(businessId) {
+  const tbody = document.getElementById("recent-customers");
+  if (!tbody) return;
 
-const invQ = query(
- collection(db, "businesses", businessId, "inventory"),
- orderBy("createdAt", "desc"),
- limit(5)
-);
+  const q = query(
+    collection(db, "businesses", businessId, "inventory"),
+    orderBy("createdAt", "desc"),
+    limit(5)
+  );
 
-const invSnap = await getDocs(invQ);
-customersBody.innerHTML = "";
+  const snap = await getDocs(q);
+  tbody.innerHTML = "";
 
-if (invSnap.empty) {
- customersBody.innerHTML = `
-   <tr>
-     <td colspan="2"
-       style="text-align:center; opacity:.6;">
-       No items yet
-     </td>
-   </tr>
- `;
+  if (snap.empty) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="2" style="text-align:center; opacity:.6;">
+          No items yet
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  snap.forEach(docSnap => {
+    const i = docSnap.data();
+    tbody.innerHTML += `
+      <tr>
+        <td>
+          <h4>
+            ${i.name}<br>
+            <span>₦${i.price || 0} per unit</span>
+          </h4>
+        </td>
+      </tr>
+    `;
+  });
 }
-
-invSnap.forEach(doc => {
- const i = doc.data();
-
- customersBody.innerHTML += `
-   <tr>
-     <td>
-       <h4>
-         ${i.name}<br>
-         <span>₦${i.price} per unit</span>
-       </h4>
-     </td>
-   </tr>
- `;
-});
 
 /* =========================
    AUTH GUARD
 ========================= */
-onAuthStateChanged(auth, async (user) => {
+onAuthStateChanged(auth, async user => {
   if (!user) {
     window.location.href = "signup.html";
     return;
@@ -209,7 +232,6 @@ onAuthStateChanged(auth, async (user) => {
   try {
     businessId = await getBusinessIdByEmail(user.email);
   } catch {
-    // only redirect if business truly does not exist
     window.location.href = "setup.html";
     return;
   }
@@ -218,6 +240,8 @@ onAuthStateChanged(auth, async (user) => {
     await loadDashboardUI(businessId);
     listenToInventoryCount(businessId);
     listenToBookingStats(businessId);
+    await loadRecentBookings(businessId);
+    await loadRecentInventory(businessId);
   } catch (err) {
     console.error("Dashboard error:", err);
     alert("Failed to load dashboard");
